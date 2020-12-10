@@ -1,0 +1,113 @@
+#include "RMDServoState.h"
+#include "mcp_can.h"
+#include <SPI.h>
+
+/*SAMD core*/
+#ifdef ARDUINO_SAMD_VARIANT_COMPLIANCE
+    #define SERIAL SerialUSB
+#else
+    #define SERIAL Serial
+#endif
+
+#define CAN_WAIT_TIMEOUT_US 500
+#define CAN_SEND_PERIOD_US 3333     // 3333 gives about reliably 195 hz output to serial
+#define DEBUG_PRINT 0
+
+unsigned char flagRecv = 0;
+unsigned char buf[8];
+unsigned long can_timer, read_timer;
+bool do_send = true;
+
+MCP_CAN CAN(9); 
+RMDServoState servo1(0x141, &CAN, CAN_WAIT_TIMEOUT_US);
+RMDServoState servo2(0x142, &CAN, CAN_WAIT_TIMEOUT_US);
+
+
+void setup() {
+    SERIAL.begin(115200);
+    while (!SERIAL) {
+        ; // wait for serial port to connect. Needed for native USB port only
+    }
+    while (CAN_OK != CAN.begin(CAN_1000KBPS)) {           
+        SERIAL.println("CAN BUS Shield init fail");
+        SERIAL.println(" Init CAN BUS Shield again");
+        delay(100);
+    }
+    SERIAL.println("CAN BUS Shield init ok!");
+
+    /*
+    // Measure how long it takes to send (without waiting for response) a single message
+    unsigned long tic = micros();
+    unsigned char msg[8] = {
+        0x90, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
+    }; 
+    CAN.sendMsgBuf(0x141, 0, 8, msg);
+    SERIAL.println(micros()-tic);
+    delay(2000);
+    */
+
+}
+
+
+void loop() {
+
+    /*
+    // Iterate over all frames in buffer (currently causes mixed up CAN IDs)
+    read_timer = micros();
+    unsigned int timeout = 0;
+    while (CAN_MSGAVAIL == CAN.checkReceive()) {
+        unsigned long current_loop_timer = micros();
+        unsigned long canId = CAN.getCanId();
+        int counter1 = 0, counter2 = 0;
+        if (canId == servo1.device_id) {
+            counter1++;
+            servo1.processFrame();
+        } 
+        if (canId == servo2.device_id) {
+            counter2++;
+            servo2.processFrame();
+        }
+        timeout += (micros() - current_loop_timer);
+        if (DEBUG_PRINT) {
+            SERIAL.print("Got ");
+            SERIAL.print(counter1);
+            SERIAL.println(" frames from 0x141!");
+            SERIAL.print("Got ");
+            SERIAL.print(counter2);
+            SERIAL.println(" frames from 0x142!");
+        }
+    }
+    read_timer = micros() - read_timer;
+    */
+
+
+    // Send commands to request encoder values
+    if (micros() - can_timer > CAN_SEND_PERIOD_US) {
+
+        unsigned long send_timer = micros();
+
+        bool wait = true; // wait for response before moving on, 
+                          // must be true if not checking for Rx in every loop()
+
+        if (!servo1.requestEncoder(true)) { 
+            SERIAL.println("Send to servo1 failed!");
+        }
+        if (!servo2.requestEncoder(true)) {
+            SERIAL.println("Send to servo2 failed!");
+        }
+
+        send_timer = micros() - send_timer;
+
+        SERIAL.print(send_timer);
+        SERIAL.print(", ");
+        SERIAL.print(read_timer);
+        SERIAL.print(", ");
+        SERIAL.print(servo1.getAbsEncoder());
+        SERIAL.print(", ");
+        SERIAL.print(servo2.getAbsEncoder());
+        SERIAL.println();
+
+        can_timer = micros();
+    }
+
+}
